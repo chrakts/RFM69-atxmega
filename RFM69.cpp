@@ -173,8 +173,8 @@ bool RFM69::initialize(uint8_t freqBand, uint8_t nodeID, uint8_t networkID)
     return false;
 
 //  attachInterrupt(_interruptNum, RFM69::isr0, RISING);
-	RFM69_INT_PORT.INTCTRL            = PORT_INT0LVL0_bm ; // Low-Level interrupt 0 for PORTD
-	RFM69_INT_PORT.INT0MASK           = RFM69_INT_PIN;
+	RFM69_INT_PORT.INTCTRL            = PORT_INT1LVL0_bm ; // Low-Level interrupt 0 for PORTD
+	RFM69_INT_PORT.INT1MASK           = RFM69_INT_PIN;
 	RFM69_INT_PORT.RFM69_INT_PINCTRL  = PORT_ISC_RISING_gc | PORT_OPC_PULLUP_gc ;
   sei();
 
