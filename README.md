@@ -1,4 +1,4 @@
-# Branch of the RFM69 Library to be used with ATxmega (no Arduino an more, just  ATxmega ...)
+# Branch of the RFM69 Library to be used with ATxmega (no Arduino any more, just  ATxmega ...)
 
 
 # RFM69 Library
