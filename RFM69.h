@@ -133,9 +133,12 @@
 
 #else // atxmega
   #include <avr/io.h>
-  #include "External.h"
+  #include <stdlib.h>
+  //#include "External.h"
+  #include "spi_driver.h"
   #include "rfm69Hardware.h"
   #include "MyTimer.h"
+  #include "string.h"
 #endif
 
 
@@ -184,6 +187,7 @@ class RFM69 {
     static volatile int16_t RSSI; // most accurate RSSI during reception (closest to the reception). RSSI of last packet.
     static volatile uint8_t _mode; // should be protected?
     volatile TIMER   *_rfmTimer;
+    SPI_Master_t *_spiRFM69;
 
 #ifndef atxmega
     RFM69(uint8_t slaveSelectPin, uint8_t interruptPin, bool isRFM69HW, uint8_t interruptNum) //interruptNum is now deprecated
@@ -192,7 +196,7 @@ class RFM69 {
     RFM69(uint8_t slaveSelectPin=RF69_SPI_CS, uint8_t interruptPin=RF69_IRQ_PIN, bool isRFM69HW=false);
 
 #else // atxmega
-    RFM69(volatile TIMER *rfmTimer,bool isRFM69HW=false);
+    RFM69(volatile TIMER *rfmTimer,SPI_Master_t *spiRFM69,bool isRFM69HW=false);
 #endif
 
 
@@ -200,6 +204,11 @@ class RFM69 {
     void setAddress(uint8_t addr);
     void setNetwork(uint8_t networkID);
     bool canSend();
+    void sendRelay(char *relayText);
+    bool isDataFromRelayAvailable();
+    bool getDebugFlag();
+    void setDebugFlag(uint8_t flag);
+    void processRelay();
     virtual void send(uint8_t toAddress, const void* buffer, uint8_t bufferSize, bool requestACK=false);
     virtual bool sendWithRetry(uint8_t toAddress, const void* buffer, uint8_t bufferSize, uint8_t retries=2, uint8_t retryWaitTime=4); // 40ms roundtrip req for 61byte packets
     virtual bool receiveDone();
@@ -240,6 +249,10 @@ class RFM69 {
     bool _promiscuousMode;
     uint8_t _powerLevel;
     bool _isRFM69HW;
+    char *relayTextPointer;
+    bool _dataFromRelayAvailable=false;
+    uint8_t statusRelay=0;
+    uint8_t debugFlag = 0;
 #if defined (SPCR) && defined (SPSR)
     uint8_t _SPCR;
     uint8_t _SPSR;

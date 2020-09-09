@@ -28,7 +28,7 @@
 #include <SPI.h>
 #include <avr/interrupt.h>
 
-SPI rfm69SPI(0);
+//SPI rfm69SPI(0);
 
 volatile uint8_t RFM69::DATA[RF69_MAX_DATA_LEN];
 volatile uint8_t RFM69::_mode;        // current transceiver state
@@ -60,11 +60,12 @@ RFM69* RFM69::selfPointer;
     #endif
     }
 #else // atxmega
-    RFM69::RFM69(volatile TIMER *rfmTimer,bool isRFM69HW)
+    RFM69::RFM69(volatile TIMER *rfmTimer,SPI_Master_t *spiRFM69,bool isRFM69HW)
     {
       //_slaveSelectPin = slaveSelectPin;
       //_interruptPin = interruptPin;
       _rfmTimer = rfmTimer;
+      _spiRFM69 = spiRFM69;
       _mode = RF69_MODE_STANDBY;
       _promiscuousMode = false;
       _powerLevel = 31;
@@ -286,6 +287,70 @@ bool RFM69::canSend()
   return false;
 }
 
+void RFM69::sendRelay(char *relayText)
+{
+  if( _dataFromRelayAvailable == false )
+  {
+    size_t i = strlen(relayText);
+    relayTextPointer = (char *) malloc(i+1);
+    strcpy(relayTextPointer,relayText);
+    _dataFromRelayAvailable = true;
+    statusRelay = 1;
+  }
+}
+
+bool RFM69::getDebugFlag()
+{
+  return(debugFlag);
+}
+
+void RFM69::setDebugFlag(uint8_t flag)
+{
+  debugFlag = flag;
+}
+
+bool RFM69::isDataFromRelayAvailable()
+{
+  return(_dataFromRelayAvailable);
+}
+
+void RFM69::processRelay()
+{
+  switch( statusRelay )
+  {
+    case 1:
+      send(relayTextPointer[0], relayTextPointer, strlen(relayTextPointer), true);
+      _rfmTimer->value = 8;
+      _rfmTimer->state = TM_START;
+      statusRelay++;
+    break;
+    case 2 ... 5:
+      if (_rfmTimer->state != TM_STOP)
+      {
+        if (ACKReceived('L'))
+        {
+          statusRelay = 7;
+        }
+      }
+      else
+      {
+        statusRelay++;
+        _rfmTimer->value = 8;
+        _rfmTimer->state = TM_START;
+      }
+    break;
+    case 6:
+      debugFlag = 77;
+      statusRelay++;
+    break;
+    case 7:
+      free(relayTextPointer);
+      _dataFromRelayAvailable = false;
+      statusRelay = 0;
+    break;
+  }
+}
+
 void RFM69::send(uint8_t toAddress, const void* buffer, uint8_t bufferSize, bool requestACK)
 {
   writeReg(REG_PACKETCONFIG2, (readReg(REG_PACKETCONFIG2) & 0xFB) | RF_PACKET2_RXRESTART); // avoid RX deadlocks
@@ -371,14 +436,15 @@ void RFM69::sendFrame(uint8_t toAddress, const void* buffer, uint8_t bufferSize,
 
   // write to FIFO
   select();
-  rfm69SPI.transfer(REG_FIFO | 0x80);
-  rfm69SPI.transfer(bufferSize + 3);
-  rfm69SPI.transfer(toAddress);
-  rfm69SPI.transfer(_address);
-  rfm69SPI.transfer(CTLbyte);
+  //rfm69SPI.transfer(REG_FIFO | 0x80);
+  SPI_MasterTransceiveByte(_spiRFM69,REG_FIFO | 0x80);
+  SPI_MasterTransceiveByte(_spiRFM69,bufferSize + 3);
+  SPI_MasterTransceiveByte(_spiRFM69,toAddress);
+  SPI_MasterTransceiveByte(_spiRFM69,_address);
+  SPI_MasterTransceiveByte(_spiRFM69,CTLbyte);
 
   for (uint8_t i = 0; i < bufferSize; i++)
-    rfm69SPI.transfer(((uint8_t*) buffer)[i]);
+    SPI_MasterTransceiveByte(_spiRFM69,((uint8_t*) buffer)[i]);
   unselect();
 
   // no need to wait for transmit mode to be ready since its handled by the radio
@@ -401,10 +467,10 @@ void RFM69::interruptHandler() {
     //RSSI = readRSSI();
     setMode(RF69_MODE_STANDBY);
     select();
-    rfm69SPI.transfer(REG_FIFO & 0x7F);
-    PAYLOADLEN = rfm69SPI.transfer(0);
+    SPI_MasterTransceiveByte(_spiRFM69,REG_FIFO & 0x7F);
+    PAYLOADLEN = SPI_MasterTransceiveByte(_spiRFM69,0);
     PAYLOADLEN = PAYLOADLEN > 66 ? 66 : PAYLOADLEN; // precaution
-    TARGETID = rfm69SPI.transfer(0);
+    TARGETID = SPI_MasterTransceiveByte(_spiRFM69,0);
     if(!(_promiscuousMode || TARGETID == _address || TARGETID == RF69_BROADCAST_ADDR) // match this node's address, or broadcast address or anything in promiscuous mode
        || PAYLOADLEN < 3) // address situation could receive packets that are malformed and don't fit this libraries extra fields
     {
@@ -416,8 +482,8 @@ void RFM69::interruptHandler() {
     }
 
     DATALEN = PAYLOADLEN - 3;
-    SENDERID = rfm69SPI.transfer(0);
-    uint8_t CTLbyte = rfm69SPI.transfer(0);
+    SENDERID = SPI_MasterTransceiveByte(_spiRFM69,0);
+    uint8_t CTLbyte = SPI_MasterTransceiveByte(_spiRFM69,0);
 
     ACK_RECEIVED = CTLbyte & RFM69_CTL_SENDACK; // extract ACK-received flag
     ACK_REQUESTED = CTLbyte & RFM69_CTL_REQACK; // extract ACK-requested flag
@@ -426,7 +492,7 @@ void RFM69::interruptHandler() {
 
     for (uint8_t i = 0; i < DATALEN; i++)
     {
-      DATA[i] = rfm69SPI.transfer(0);
+      DATA[i] = SPI_MasterTransceiveByte(_spiRFM69,0);
     }
     if (DATALEN < RF69_MAX_DATA_LEN) DATA[DATALEN] = 0; // add null at end of string
     unselect();
@@ -498,9 +564,9 @@ void RFM69::encrypt(const char* key) {
     memcpy(_encryptKey, key, 16);
 #endif
     select();
-    rfm69SPI.transfer(REG_AESKEY1 | 0x80);
+    SPI_MasterTransceiveByte(_spiRFM69,REG_AESKEY1 | 0x80);
     for (uint8_t i = 0; i < 16; i++)
-      rfm69SPI.transfer(key[i]);
+      SPI_MasterTransceiveByte(_spiRFM69,key[i]);
     unselect();
   }
   writeReg(REG_PACKETCONFIG2, (readReg(REG_PACKETCONFIG2) & 0xFE) | (key ? 1 : 0));
@@ -523,8 +589,8 @@ int16_t RFM69::readRSSI(bool forceTrigger) {
 uint8_t RFM69::readReg(uint8_t addr)
 {
   select();
-  rfm69SPI.transfer(addr & 0x7F);
-  uint8_t regval = rfm69SPI.transfer(0);
+  SPI_MasterTransceiveByte(_spiRFM69,addr & 0x7F);
+  uint8_t regval = SPI_MasterTransceiveByte(_spiRFM69,0);
   unselect();
   return regval;
 }
@@ -532,8 +598,8 @@ uint8_t RFM69::readReg(uint8_t addr)
 void RFM69::writeReg(uint8_t addr, uint8_t value)
 {
   select();
-  rfm69SPI.transfer(addr | 0x80);
-  rfm69SPI.transfer(value);
+  SPI_MasterTransceiveByte(_spiRFM69,addr | 0x80);
+  SPI_MasterTransceiveByte(_spiRFM69,value);
   unselect();
 }
 
@@ -633,15 +699,15 @@ void RFM69::readAllRegs()
   long freqCenter = 0;
 #endif
 
-  debug.println("Address - HEX - BIN");
+  //debug.println("Address - HEX - BIN");
   for (uint8_t regAddr = 1; regAddr <= 0x4F; regAddr++)
   {
     select();
-    rfm69SPI.transfer(regAddr & 0x7F); // send address + r/w bit
-    regVal = rfm69SPI.transfer(0);
+    SPI_MasterTransceiveByte(_spiRFM69,regAddr & 0x7F); // send address + r/w bit
+    regVal = SPI_MasterTransceiveByte(_spiRFM69,0);
     unselect();
 
-    debug.pformat("%x - %x\n",regAddr,regVal);
+    //debug.pformat("%x - %x\n",regAddr,regVal);
 /*    debug.print(regAddr, HEX);
     debug.print(" - ");
     debug.print(regVal,HEX);
@@ -891,20 +957,20 @@ void RFM69::readAllRegs()
 void RFM69::readAllRegsCompact() {
   // Print the header row and first register entry
 //  debug.println();debug.print("     ");
-  debug.print("\n    ");
+  //debug.print("\n    ");
   for ( uint8_t reg = 0x00; reg<0x10; reg++ ) {
-    debug.pformat("%x  ",reg);
+    //debug.pformat("%x  ",reg);
     //debug.print(reg, HEX);
     //debug.print("  ");
   }
 
   //debug.println();
-  debug.print("\n00: --  ");
+  //debug.print("\n00: --  ");
 
   // Loop over the registers from 0x01 to 0x7F and print their values
   for ( uint8_t reg = 0x01; reg<0x80; reg++ ) {
     if ( reg % 16 == 0 ) {    // Print the header column entries
-      debug.pformat("\n%x: ",reg);
+//      debug.pformat("\n%x: ",reg);
 /*      debug.println();
       debug.print( reg, HEX );
       debug.print(": ");*/
@@ -913,7 +979,7 @@ void RFM69::readAllRegsCompact() {
     // Print the actual register values
     uint8_t ret = readReg( reg );
     //if ( ret < 0x10 ) debug.print("0");  // Handle values less than 10
-    debug.pformat("%x: ",ret);
+   // debug.pformat("%x: ",ret);
 /*    debug.print( ret, HEX);
     debug.print(" ");*/
   }
