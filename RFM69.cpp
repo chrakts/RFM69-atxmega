@@ -331,6 +331,12 @@ void RFM69::processRelay()
         {
           statusRelay = 7;
         }
+        else
+        {
+          statusRelay++;
+          _rfmTimer->value = 8;
+          _rfmTimer->state = TM_START;
+        }
       }
       else
       {
@@ -685,6 +691,7 @@ void SerialPrint_P(PGM_P str, void (*f)(uint8_t) = SerialWrite ) {
 }
 #endif
 
+/*
 void RFM69::readAllRegs()
 {
   uint8_t regVal;
@@ -708,12 +715,12 @@ void RFM69::readAllRegs()
     unselect();
 
     //debug.pformat("%x - %x\n",regAddr,regVal);
-/*    debug.print(regAddr, HEX);
+    debug.print(regAddr, HEX);
     debug.print(" - ");
     debug.print(regVal,HEX);
     debug.print(" - ");
     debug.println(regVal,BIN);
-*/
+
 
 #if REGISTER_DETAIL
     switch ( regAddr )
@@ -954,6 +961,7 @@ void RFM69::readAllRegs()
   unselect();
 }
 
+
 void RFM69::readAllRegsCompact() {
   // Print the header row and first register entry
 //  debug.println();debug.print("     ");
@@ -971,19 +979,21 @@ void RFM69::readAllRegsCompact() {
   for ( uint8_t reg = 0x01; reg<0x80; reg++ ) {
     if ( reg % 16 == 0 ) {    // Print the header column entries
 //      debug.pformat("\n%x: ",reg);
-/*      debug.println();
+      debug.println();
       debug.print( reg, HEX );
-      debug.print(": ");*/
+      debug.print(": ");
     }
 
     // Print the actual register values
     uint8_t ret = readReg( reg );
     //if ( ret < 0x10 ) debug.print("0");  // Handle values less than 10
    // debug.pformat("%x: ",ret);
-/*    debug.print( ret, HEX);
-    debug.print(" ");*/
+    debug.print( ret, HEX);
+    debug.print(" ");
   }
 }
+*/
+
 
 uint8_t RFM69::readTemperature(uint8_t calFactor) // returns centigrade
 {
